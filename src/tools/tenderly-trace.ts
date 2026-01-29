@@ -78,7 +78,7 @@ export async function traceHistoricalTransaction(
       return count;
     };
     
-    const totalCalls = countCalls(result.trace);
+    const totalCalls = result.trace[0] ? countCalls(result.trace[0]) : 0;
     console.log(`      Total Calls: ${totalCalls}`);
     console.log(`      Logs: ${result.logs?.length || 0}`);
 

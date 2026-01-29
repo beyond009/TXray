@@ -55,7 +55,13 @@ app.post('/api/chat', async (req, res) => {
     }
 
     try {
-      const onProgress = (event: ProgressEvent) => sendSSE(res, event.type, event);
+      // Send only the payload to avoid double-wrapping on frontend
+      const onProgress = (event: ProgressEvent) => {
+        // For events with payload, send payload only
+        // For events without payload (like start events), send empty object
+        const data = 'payload' in event ? event.payload : ('content' in event ? { content: event.content } : {});
+        sendSSE(res, event.type, data);
+      };
       const result = await analyzeTx(txHash, 'ethereum', { onProgress });
 
       if (result.error) {

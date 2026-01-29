@@ -159,3 +159,18 @@ export interface LLMConfig {
   model: string;
   baseURL?: string;
 }
+
+/**
+ * Progress events for streaming pipeline steps (e.g. to SSE).
+ */
+export type ProgressEvent =
+  | { type: 'rpc_done'; payload?: { blockNumber?: number } }
+  | { type: 'etherscan_start' }
+  | { type: 'etherscan_done'; payload?: { abi: boolean; internalTxCount: number } }
+  | { type: 'tenderly_start' }
+  | { type: 'tenderly_done'; payload?: { hasTrace: boolean } }
+  | { type: 'draft_start' }
+  | { type: 'draft_chunk'; content: string }
+  | { type: 'draft_done' }
+  | { type: 'done'; payload: { report: any } }
+  | { type: 'error'; message: string; step?: string };

@@ -1,3 +1,5 @@
+import type { ProgressEvent } from '../types/index.js';
+import { runWithProgress } from '../chat/progress.js';
 import { StateGraph, Annotation } from '@langchain/langgraph';
 import { extractNode, draftNode, outputNode } from './nodes.js';
 
@@ -27,13 +29,16 @@ export function createMEVAnalyzer() {
   return workflow.compile();
 }
 
-export async function analyzeTx(txHash: string, chain: string = 'ethereum') {
+export interface AnalyzeTxOptions {
+  onProgress?: (event: ProgressEvent) => void;
+}
+
+export async function analyzeTx(txHash: string, chain: string = 'ethereum', options?: AnalyzeTxOptions) {
   const analyzer = createMEVAnalyzer();
-  
-  const result = await analyzer.invoke({
-    txHash,
-    chain,
-  });
-  
-  return result;
+  const invoke = () => analyzer.invoke({ txHash, chain });
+
+  if (options?.onProgress) {
+    return runWithProgress(options.onProgress, invoke);
+  }
+  return invoke();
 }

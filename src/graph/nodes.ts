@@ -1,6 +1,7 @@
 import type { Hash } from 'viem';
 import { formatUnits } from 'viem';
 import type { AnalysisState, DecodedCall } from '../types/index.js';
+import { getProgress } from '../chat/progress.js';
 import { getTransactionDetails, extractTokenFlows, publicClient, isContract, getTokenInfoFromRPC } from '../tools/rpc.js';
 import { getContractABI, getContractSource, getAddressLabel, getInternalTransactions, getTokenInfo, getGasPriceAtBlock } from '../tools/etherscan.js';
 import { traceHistoricalTransaction, extractAllCallsFromTrace } from '../tools/tenderly-trace.js';
@@ -22,16 +23,15 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
     
     // 获取交易详情
     const rawTx = await getTransactionDetails(txHash);
-    
-    // 获取 receipt 用于提取 token flows
     const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
     const tokenFlows = extractTokenFlows(receipt);
-    
-    // 解码 calldata
+    getProgress()?.({ type: 'rpc_done', payload: { blockNumber: rawTx.blockNumber } });
+
     const { decodeCalldata } = await import('../tools/rpc.js');
     const decodedInput = decodeCalldata(rawTx.input);
-    
+
     console.log('   🔍 Fetching additional data from Etherscan...');
+    getProgress()?.({ type: 'etherscan_start' });
     
     // 导入 Etherscan 工具函数（按需使用）
     
@@ -99,6 +99,7 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
     
     if (config.useTenderlySimulation && config.tenderlyRpcUrl) {
       console.log('   🔍 [Tenderly] Fetching historical transaction trace...');
+      getProgress()?.({ type: 'tenderly_start' });
       try {
         tenderlyCallTrace = await traceHistoricalTransaction(txHash);
         
@@ -144,8 +145,10 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
           }));
           console.log(`   ✅ Extracted ${tenderlyInternalTxs.length} calls from Tenderly`);
         }
+        getProgress()?.({ type: 'tenderly_done', payload: { hasTrace: !!(tenderlyCallTrace?.trace) } });
       } catch (error) {
         console.log(`   ⚠️  [Tenderly] Trace failed: ${error}`);
+        getProgress()?.({ type: 'tenderly_done', payload: { hasTrace: false } });
       }
     } else {
       if (!config.tenderlyRpcUrl) {
@@ -153,16 +156,19 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
       } else if (!config.useTenderlySimulation) {
         console.log('   ℹ️  [Tenderly] Skipped: USE_TENDERLY_SIMULATION=false');
       }
+      getProgress()?.({ type: 'tenderly_done', payload: { hasTrace: false } });
     }
     
     // 数据源 2: Etherscan Internal Transactions（ETH 流转）
     console.log('   📡 [Etherscan] Fetching internal txs (ETH flows)...');
     const etherscanInternalTxs = await getInternalTransactions(txHash);
     console.log(`   ✅ Got ${etherscanInternalTxs.length} internal txs from Etherscan`);
-    
-    // 统一视图：优先使用 Tenderly，回退到 Etherscan
+    getProgress()?.({
+      type: 'etherscan_done',
+      payload: { abi: !!(contractABI && contractABI.length > 0), internalTxCount: etherscanInternalTxs.length },
+    });
+
     const internalTxs = tenderlyInternalTxs.length > 0 ? tenderlyInternalTxs : etherscanInternalTxs;
-    
     const gasPrice = await getGasPriceAtBlock(rawTx.blockNumber);
     
     // 输出获取结果
@@ -401,11 +407,10 @@ export async function draftNode(state: AnalysisState): Promise<Partial<AnalysisS
   if (state.error || !state.rawTx) {
     return { error: state.error || 'No transaction data available' };
   }
-  
+  getProgress()?.({ type: 'draft_start' });
+
   try {
-    // 初始化 LLM
     const { llmConfig } = await import('../config/index.js');
-    
     console.log('✍️  [Draft] Generating explanation...');
     console.log(`   Provider: ${llmConfig.provider}`);
     console.log(`   Model: ${llmConfig.model}`);
@@ -473,7 +478,7 @@ export async function draftNode(state: AnalysisState): Promise<Partial<AnalysisS
     console.log('   ⏳ Waiting for response (this may take 10-30s)...');
     const response = await llm.invoke(prompt);
     const draftExplanation = response.content.toString();
-    
+    getProgress()?.({ type: 'draft_done' });
     console.log('✅ [Draft] Explanation generated successfully!');
     console.log(`   Response length: ${draftExplanation.length} chars`);
     
@@ -490,17 +495,17 @@ export async function draftNode(state: AnalysisState): Promise<Partial<AnalysisS
 
 export async function outputNode(state: AnalysisState): Promise<Partial<AnalysisState>> {
   console.log('📄 [Output] Formatting final report...');
-  
+
   if (state.error) {
-    return {
-      finalReport: {
-        summary: `Error: ${state.error}`,
-        mevType: 'unknown',
-        steps: [],
-        tokenFlows: [],
-        technicalDetails: {},
-      },
+    const errorReport = {
+      summary: `Error: ${state.error}`,
+      mevType: 'unknown' as const,
+      steps: [],
+      tokenFlows: [],
+      technicalDetails: {},
     };
+    getProgress()?.({ type: 'done', payload: { report: errorReport } });
+    return { finalReport: errorReport };
   }
   
   const mevPattern = identifyMEVPattern(
@@ -508,24 +513,24 @@ export async function outputNode(state: AnalysisState): Promise<Partial<Analysis
     state.tokenFlows || []
   );
   
-  return {
-    finalReport: {
-      summary: state.draftExplanation || 'No explanation generated',
-      mevType: mevPattern.type,
-      steps: extractSteps(state.draftExplanation || ''),
-      tokenFlows: state.tokenFlows || [],
-      technicalDetails: {
-        txHash: state.txHash,
-        blockNumber: state.rawTx?.blockNumber,
-        gasUsed: state.rawTx?.gasUsed,
-        from: state.rawTx?.from,
-        to: state.rawTx?.to,
-        mevConfidence: mevPattern.confidence,
-      },
-      tenderlyCallTrace: state.tenderlyCallTrace,
-      etherscanInternalTxs: state.etherscanInternalTxs,
+  const finalReport = {
+    summary: state.draftExplanation || 'No explanation generated',
+    mevType: mevPattern.type,
+    steps: extractSteps(state.draftExplanation || ''),
+    tokenFlows: state.tokenFlows || [],
+    technicalDetails: {
+      txHash: state.txHash,
+      blockNumber: state.rawTx?.blockNumber,
+      gasUsed: state.rawTx?.gasUsed,
+      from: state.rawTx?.from,
+      to: state.rawTx?.to,
+      mevConfidence: mevPattern.confidence,
     },
+    tenderlyCallTrace: state.tenderlyCallTrace,
+    etherscanInternalTxs: state.etherscanInternalTxs,
   };
+  getProgress()?.({ type: 'done', payload: { report: finalReport } });
+  return { finalReport };
 }
 
 /**

@@ -46,20 +46,17 @@ export interface ChatAgentOptions {
   onToken?: (token: string) => void;
 }
 
-const SYSTEM_PROMPT = `You are an Ethereum blockchain analyst assistant. You help users understand transactions, addresses, and smart contracts.
+const SYSTEM_PROMPT = `You are a friendly Ethereum blockchain analyst assistant. You help users understand transactions, addresses, and smart contracts.
 
-Your capabilities:
-- analyze_transaction: Analyze a transaction hash to explain what happened (token transfers, MEV activity, etc.)
-- analyze_address: Analyze an address to understand its activity (coming soon)
+Available tools:
+- analyze_transaction: Analyze a transaction hash (0x + 64 hex chars) to explain token transfers, MEV activity, etc.
+- analyze_address: Analyze an address (coming soon)
 
 Guidelines:
-- When a user provides a transaction hash (0x followed by 64 hex characters), use analyze_transaction tool immediately
-- When a user asks about an address, inform them that address analysis is coming soon
-- Be concise but thorough in your explanations
-- If analysis fails, explain the error clearly
-- You can have a normal conversation when users have general questions
-
-Always respond in the same language the user uses.`;
+- Have natural conversations with users - remember context from earlier in the chat
+- When given a transaction hash, use analyze_transaction immediately
+- Be concise but helpful
+- Respond in the user's language`;
 
 export function createChatAgent(options?: ChatAgentOptions) {
   const tools = createTools(options?.onProgress);
@@ -96,47 +93,65 @@ export async function chat(
 ): Promise<ChatResult> {
   const agent = createChatAgent(options);
 
-  const langchainMessages = messages.map((m) =>
+  // Filter out empty messages from history
+  const validMessages = messages.filter(m => m.content && m.content.trim());
+  
+  const langchainMessages = validMessages.map((m) =>
     m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content)
   );
+
+  console.log(`[Chat] Processing ${langchainMessages.length} messages in history`);
 
   options?.onProgress?.({ type: 'draft_start' });
 
   const toolsCalled: string[] = [];
-
-  // Use streamEvents for proper streaming with tool calling
-  const eventStream = agent.streamEvents(
-    { messages: langchainMessages },
-    { version: 'v2' }
-  );
-
   let finalResponse = '';
 
-  for await (const event of eventStream) {
-    // Stream tokens from final LLM response
-    if (event.event === 'on_chat_model_stream' && event.data?.chunk?.content) {
-      const content = event.data.chunk.content;
-      if (typeof content === 'string' && content) {
-        options?.onToken?.(content);
-        finalResponse += content;
+  try {
+    // Use streamEvents for proper streaming with tool calling
+    const eventStream = agent.streamEvents(
+      { messages: langchainMessages },
+      { version: 'v2' }
+    );
+
+    for await (const event of eventStream) {
+      // Stream tokens from LLM response
+      if (event.event === 'on_chat_model_stream' && event.data?.chunk?.content) {
+        const content = event.data.chunk.content;
+        if (typeof content === 'string' && content) {
+          options?.onToken?.(content);
+          finalResponse += content;
+        }
+      }
+
+      // Track tool calls
+      if (event.event === 'on_tool_start') {
+        const toolName = event.name;
+        if (toolName && !toolsCalled.includes(toolName)) {
+          toolsCalled.push(toolName);
+          console.log(`[Chat] Tool called: ${toolName}`);
+        }
+      }
+
+      // Capture final state if streaming misses content
+      if (event.event === 'on_chain_end' && event.name === 'LangGraph') {
+        const output = event.data?.output;
+        if (output?.messages && Array.isArray(output.messages)) {
+          const lastMsg = output.messages[output.messages.length - 1];
+          if (lastMsg?.content && typeof lastMsg.content === 'string' && !finalResponse) {
+            finalResponse = lastMsg.content;
+          }
+        }
       }
     }
-
-    // Track tool calls
-    if (event.event === 'on_tool_start') {
-      const toolName = event.name;
-      if (toolName && !toolsCalled.includes(toolName)) {
-        toolsCalled.push(toolName);
-      }
-    }
-
-    // Emit progress events from tools
-    if (event.event === 'on_tool_end' && event.data?.output) {
-      // Tool completed
-    }
+  } catch (err) {
+    console.error('[Chat] Stream error:', err);
+    throw err;
   }
 
   options?.onProgress?.({ type: 'draft_done' });
+
+  console.log(`[Chat] Response length: ${finalResponse.length}, tools: ${toolsCalled.join(', ') || 'none'}`);
 
   return { response: finalResponse, toolsCalled };
 }

@@ -41,9 +41,21 @@ If you need a proxy, run via:
 
 ## Run
 
+**CLI**
+
 ```bash
 pnpm exec tsx src/cli.ts 0xYOUR_TX_HASH
 ```
+
+**Chat API (for frontend)**
+
+```bash
+pnpm run server
+```
+
+- `POST /api/chat` — body: `{ "conversationId"?: string, "message": string }`. Response: SSE stream.
+- Rule-based: if `message` contains a tx hash (0x + 64 hex), the backend runs the analysis pipeline and streams progress events (`rpc_done`, `etherscan_start`, `etherscan_done`, `tenderly_start`, `tenderly_done`, `draft_start`, `draft_done`, `done`), then `message_end` with `{ content, report }`.
+- First event: `session` with `{ conversationId }`. If no tx hash, reply is: "Send a transaction hash (0x...) to analyze it."
 
 ## License
 

@@ -244,9 +244,6 @@ export function extractAllCalls(trace: CallTrace[]): CallTrace[] {
   return allCalls;
 }
 
-/**
- * 从 Tenderly 结果提取代币转账信息
- */
 export function extractTokenTransfers(result: TenderlySimulationResult) {
   if (!result.assetChanges) return [];
   

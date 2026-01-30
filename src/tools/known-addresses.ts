@@ -38,12 +38,21 @@ export const KNOWN_ADDRESSES: Record<string, string> = {
   // Curve
   '0xbebe82bab7ba07830d9d5e0e8e4d4a54b0f10b95': 'Curve.fi: Registry',
   '0x99a58482bd75cbab83b27ec03ca68ff489b5788f': 'Curve.fi: Swap Router',
+  '0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7': 'Curve: 3pool (DAI/USDC/USDT)',
+  '0x52ea46506b9cc5ef470c5bf89f17dc28bb35d85c': 'Curve: USDT Swap',
+  '0xd51a44d3fae010294c616388b506acda1bfaae46': 'Curve: Tricrypto (USDT/WBTC/WETH)',
+  
+  // Uniswap V3 Pools
+  '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640': 'Uniswap V3: WETH/USDC 0.3%',
+  '0x3416cf6c708da44db2624d63ea0aaef7113527c6': 'Uniswap V3: USDC/USDT 0.04%',
+  
+  // Compound
+  '0x39aa39c021dfbae8fac545936693ac917d5e7563': 'Compound: cUSDC',
   
   // Aave
   '0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9': 'Aave: Lending Pool V2',
   '0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2': 'Aave V3: Pool',
   
-  // Compound
   '0x3d9819210a31b4961b30ef54be2aed79b9c9cd3b': 'Compound: Comptroller',
   
   // MakerDAO
@@ -66,6 +75,8 @@ export const KNOWN_ADDRESSES: Record<string, string> = {
   // MEV Bots (known)
   '0x00000000003b3cc22af3ae1eac0440bcee416b40': 'MEV Bot',
   '0x000000000035b5e5ad9019092c665357240f594e': 'MEV Bot',
+  '0xbadc0defafcf6d4239bdf0b66da4d7bd36fcf05a': 'MEV Bot',
+  '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad': 'Uniswap: Universal Router',
 };
 
 type ChainID = number;

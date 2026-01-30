@@ -39,8 +39,6 @@ async function main() {
   try {
     const result = await analyzeTx(txHash);
     
-    console.log('\n' + '─'.repeat(60));
-    console.log('\n📊 分析结果:\n');
     
     if (result.error) {
       console.error('❌ 错误:', result.error);
@@ -56,19 +54,6 @@ async function main() {
         tenderlySimulation?: any;
       };
       
-      console.log(`MEV 类型: ${report.mevType.toUpperCase()}`);
-      if (report.technicalDetails.mevConfidence !== undefined) {
-        console.log(`置信度: ${(report.technicalDetails.mevConfidence * 100).toFixed(0)}%`);
-      }
-      console.log('\n' + '─'.repeat(60));
-      console.log('\n' + report.summary);
-      console.log('\n' + '─'.repeat(60));
-      console.log('\n📋 技术详情:');
-      console.log(`  区块高度: ${report.technicalDetails.blockNumber}`);
-      console.log(`  Gas 消耗: ${report.technicalDetails.gasUsed}`);
-      console.log(`  代币转账: ${report.tokenFlows.length} 笔`);
-      
-      // 显示 Tenderly 模拟结果
       if (report.tenderlySimulation) {
         console.log('\n' + '─'.repeat(60));
         console.log('\n🎭 Tenderly 模拟结果:');
@@ -122,7 +107,6 @@ async function main() {
       console.log('\n');
     }
     
-    // 辅助函数：递归提取所有调用（用于 CLI 显示）
     function extractAllCallsForDisplay(call: any, calls: any[] = []): any[] {
       calls.push(call);
       if (call.calls) {

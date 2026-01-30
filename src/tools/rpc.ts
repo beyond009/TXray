@@ -126,11 +126,9 @@ export function decodeCalldata(input: string): {
     };
   }
   
-  // 函数选择器是前 4 字节 (8 个十六进制字符 + '0x')
   const functionSelector = input.slice(0, 10);
   const rawParams = input.slice(10);
   
-  // 常见函数签名映射（本地兜底 + 用作“preferred”以解决 selector collision）
   const knownSelectors: Record<string, string> = {
     '0xa9059cbb': 'transfer(address,uint256)',
     '0x23b872dd': 'transferFrom(address,address,uint256)',
@@ -155,9 +153,6 @@ export function decodeCalldata(input: string): {
   };
 }
 
-/**
- * 从日志中提取代币转账 (ERC20 Transfer events)
- */
 export function extractTokenFlows(receipt: TransactionReceipt): TokenFlow[] {
   const tokenFlows: TokenFlow[] = [];
   
@@ -182,9 +177,6 @@ export function extractTokenFlows(receipt: TransactionReceipt): TokenFlow[] {
   return tokenFlows;
 }
 
-/**
- * 获取合约代码 (检查是否为合约地址)
- */
 export async function getContractCode(address: Hash): Promise<string> {
   const code = await publicClient.getBytecode({ address });
   return code || '0x';

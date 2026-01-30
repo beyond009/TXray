@@ -471,7 +471,7 @@ export async function draftNode(state: AnalysisState): Promise<Partial<AnalysisS
     console.log(`   Detected pattern: ${mevPattern.type} (${(mevPattern.confidence * 100).toFixed(0)}%)`);
     
     // 构建 prompt
-    const prompt = buildAnalysisPrompt(state, mevPattern);
+    const prompt = buildAnalysisPrompt(state);
     console.log(`   Prompt length: ${prompt.length} chars`);
     
     // 调用 LLM
@@ -533,10 +533,7 @@ export async function outputNode(state: AnalysisState): Promise<Partial<Analysis
   return { finalReport };
 }
 
-/**
- * 辅助函数: 构建分析 prompt（增强版 v2）
- */
-function buildAnalysisPrompt(state: AnalysisState, mevPattern: any): string {
+function buildAnalysisPrompt(state: AnalysisState): string {
   const tx = state.rawTx!;
   const flows = state.tokenFlows || [];
   const calls = state.decodedCalls || [];
@@ -544,7 +541,6 @@ function buildAnalysisPrompt(state: AnalysisState, mevPattern: any): string {
   const addressLabels = state.addressLabels || {};
   const gasContext = state.gasContext;
   
-  // 获取两个数据源
   const etherscanInternalTxs = state.etherscanInternalTxs || [];
   const tenderlyCallTrace = state.tenderlyCallTrace;
   
@@ -570,12 +566,10 @@ function buildAnalysisPrompt(state: AnalysisState, mevPattern: any): string {
     }
   }
   
-  // Build token flow details (with token names, analyze inputs/outputs)
   let tokenFlowDetails = 'No token transfers';
   let tokenFlowSummary = '';
   
   if (flows.length > 0) {
-    // Analyze token inflows and outflows
     const flowsIn = flows.filter(f => f.to.toLowerCase() === tx.from.toLowerCase());
     const flowsOut = flows.filter(f => f.from.toLowerCase() === tx.from.toLowerCase());
     
@@ -607,7 +601,7 @@ function buildAnalysisPrompt(state: AnalysisState, mevPattern: any): string {
       tokenFlowSummary += '\n';
     }
     
-    tokenFlowDetails = tokenFlowSummary + flows.slice(0, 8).map((f, i) => {
+    tokenFlowDetails = tokenFlowSummary + flows.slice(0, 25).map((f, i) => {
       const tokenInfo = f.symbol ? `${f.symbol} (${f.name || 'Unknown Token'})` : f.token;
       let amountDisplay = f.amount;
       if (f.decimals) {
@@ -623,37 +617,33 @@ function buildAnalysisPrompt(state: AnalysisState, mevPattern: any): string {
    Direction: ${f.from.toLowerCase() === tx.from.toLowerCase() ? '🔴 Outbound' : f.to.toLowerCase() === tx.from.toLowerCase() ? '🟢 Inbound' : '🔵 Other'}`;
     }).join('\n\n');
     
-    if (flows.length > 8) {
-      tokenFlowDetails += `\n\n... and ${flows.length - 8} more token transfers`;
+    if (flows.length > 25) {
+      tokenFlowDetails += `\n\n... and ${flows.length - 25} more token transfers`;
     }
   }
   
-  // Build internal transaction details
   let internalTxDetails = 'No internal calls';
   if (internalTxs.length > 0) {
     internalTxDetails = `Total ${internalTxs.length} internal calls:\n`;
-    internalTxDetails += internalTxs.slice(0, 5).map((itx, i) => {
+    internalTxDetails += internalTxs.slice(0, 15).map((itx, i) => {
       const value = (Number(itx.value) / 1e18).toFixed(6);
       return `${i + 1}. ${itx.type}: ${itx.from.slice(0, 10)}... → ${itx.to.slice(0, 10)}... (${value} ETH)`;
     }).join('\n');
-    if (internalTxs.length > 5) {
-      internalTxDetails += `\n... and ${internalTxs.length - 5} more internal calls`;
+    if (internalTxs.length > 15) {
+      internalTxDetails += `\n... and ${internalTxs.length - 15} more internal calls`;
     }
   }
   
-  // 计算实际转账的 ETH 金额
-  const ethValue = (BigInt(tx.value) / 10n**15n) / 1000n; // 转换为 ETH，保留 3 位小数
+  const ethValue = (BigInt(tx.value) / 10n**15n) / 1000n;
   const txFee = (BigInt(tx.gasUsed) * BigInt(tx.gasPrice)) / 10n**18n;
   
-  // Gas 价格分析
   const txGasPriceGwei = (Number(tx.gasPrice) / 1e9).toFixed(9);
   const gasAnalysis = gasContext ? `
-- 交易 Gas 价格: ${txGasPriceGwei} Gwei
-- 当前参考价格: ${gasContext.currentPrice} Gwei
-- 是否异常: ${gasContext.isAbnormal ? '是 ⚠️ (过高或异常低)' : '否'}
+- Tx Gas Price: ${txGasPriceGwei} Gwei
+- Reference Price: ${gasContext.currentPrice} Gwei
+- Abnormal: ${gasContext.isAbnormal ? 'Yes ⚠️ (too high or unusually low)' : 'No'}
 ` : '';
   
-  // 构建地址标签信息
   const fromLabel = addressLabels[tx.from] ? `[${addressLabels[tx.from]}]` : '';
   const toLabel = tx.to && addressLabels[tx.to] ? `[${addressLabels[tx.to]}]` : '';
   
@@ -690,24 +680,15 @@ ${tokenFlowDetails}
 - Input length: ${tx.input.length} characters
 - First 100 chars: ${tx.input.slice(0, 100)}${tx.input.length > 100 ? '...' : ''}
 
-# MEV 模式识别结果
-- **检测类型**: ${mevPattern.type}
-- **置信度**: ${(mevPattern.confidence * 100).toFixed(0)}%
-- **详细信息**: ${JSON.stringify(
-    mevPattern.details,
-    (_key, value) => typeof value === 'bigint' ? value.toString() : value,
-    2
-  )}
+# Structured Data (for deep analysis)
 
-# 结构化数据（供深度分析）
+⚠️ **Important**: Below is the raw structured data. Analyze it to understand the complete execution.
 
-⚠️ **重要**: 以下是原始的结构化数据，请仔细分析它们来理解交易的完整执行过程
-
-## Etherscan Internal Transactions (ETH 流转视图)
-说明：这是 Etherscan 提供的简化视图，只显示涉及 ETH 转账的内部调用
-数量：${etherscanInternalTxs.length} 笔
+## Etherscan Internal Transactions (ETH Flow View)
+Description: Simplified view from Etherscan, showing only internal calls with ETH transfers.
+Count: ${etherscanInternalTxs.length}
 ${etherscanInternalTxs.length > 0 ? `
-数据：
+Data:
 \`\`\`json
 ${JSON.stringify(
   etherscanInternalTxs.slice(0, 10).map(itx => ({
@@ -721,36 +702,36 @@ ${JSON.stringify(
   (_key, value) => typeof value === 'bigint' ? value.toString() : value,
   2
 )}
-${etherscanInternalTxs.length > 10 ? `\n... 还有 ${etherscanInternalTxs.length - 10} 笔（已省略）` : ''}
+${etherscanInternalTxs.length > 10 ? `\n... and ${etherscanInternalTxs.length - 10} more (omitted)` : ''}
 \`\`\`
-` : '无数据'}
+` : 'No data'}
 
-## Tenderly Call Trace (完整调用轨迹)
-说明：这是完整的交易执行轨迹，包含所有合约调用（CALL/DELEGATECALL/STATICCALL等）
-状态：${tenderlyCallTrace ? '✅ 可用' : '❌ 不可用'}
+## Tenderly Call Trace (Complete Execution Trace)
+Description: Full transaction execution trace with all contract calls (CALL/DELEGATECALL/STATICCALL).
+Status: ${tenderlyCallTrace ? '✅ Available' : '❌ Not available'}
 ${tenderlyCallTrace ? `
-调用深度：递归嵌套（请注意 calls 字段中的子调用）
-完整数据：
+Structure: Recursive (note the calls array for sub-calls).
+Raw data:
 \`\`\`json
 ${JSON.stringify(
   {
     gasUsed: tenderlyCallTrace.gasUsed,
     status: tenderlyCallTrace.status,
-    trace: tenderlyCallTrace.trace, // 完整的调用树
+    trace: tenderlyCallTrace.trace,
   },
   (_key, value) => typeof value === 'bigint' ? value.toString() : value,
   2
 ).slice(0, 5000)}
-${JSON.stringify(tenderlyCallTrace).length > 5000 ? '\n... (数据太大已截断，但你已经看到了主要结构)' : ''}
+${JSON.stringify(tenderlyCallTrace).length > 5000 ? '\n... (truncated, main structure shown)' : ''}
 \`\`\`
 
-**如何理解 Tenderly Trace**:
-- trace 是一个递归结构，每个调用可能包含 calls 数组（子调用）
-- type 字段表示调用类型：CALL（普通调用）/ DELEGATECALL（代理）/ STATICCALL（只读）
-- input 字段包含函数调用数据（前4字节是函数选择器）
-- value 字段表示转账的 ETH 数量
-- error 字段表示调用是否失败
-` : '（未配置 Tenderly 或获取失败）'}
+**How to read Tenderly Trace**:
+- trace: recursive structure; each call may have a calls array (sub-calls)
+- type: CALL (normal) / DELEGATECALL (proxy) / STATICCALL (read-only)
+- input: function call data (first 4 bytes = selector)
+- value: ETH amount transferred
+- error: whether the call failed
+` : '(Tenderly not configured or fetch failed)'}
 
 # Analysis Task
 
@@ -777,6 +758,27 @@ Analyze this Ethereum transaction in depth.
    - Like telling a story: conclusion first, then evidence
    - Don't rigidly follow fixed format
    - Accurate technical details, accessible explanations
+
+**For MEV/Arbitrage Transactions** (when many token transfers, swaps across multiple protocols):
+
+5. **Complete Swap Path** – Do NOT skip or summarize. Trace every hop:
+   - List each swap: "Hop 1: Sent X token to Pool A (0x.../label) → received Y token"
+   - Hop 2, 3, 4... until the final output
+   - Include pool/protocol names (Uniswap V3, Curve 3pool, Compound, etc.)
+
+6. **Profit Mechanism** – Explain how profit was made:
+   - What did the executor (tx.from or main contract) put in initially?
+   - What did they get out at the end?
+   - Net result: e.g. "Spent 101 WETH, received 906 WETH → ~805 WETH profit"
+   - What arbitrage opportunity was exploited? (e.g. price gap between Uniswap and Curve, flash loan + multi-hop swap)
+
+7. **Do NOT summarize** – For complex multi-hop swaps, list each step. Do not write "swapped through multiple Curve pools" without naming each pool and the tokens at each hop.
+
+8. **Mathematical / Quantitative Analysis** – For arbitrage, provide:
+   - **Implied rates at each hop**: e.g. "Hop 1: 1 WETH ≈ 1,386 USDC (141,123 / 101.85)"
+   - **Price discrepancy**: Compare the same asset pair across different pools. E.g. "Uniswap WETH/USDC: 1,386; Curve tricrypto USDT/WETH implies 1 WETH ≈ 1,420 USDT → arbitrage opportunity"
+   - **Net PnL**: Total input vs output in a common unit. E.g. "Own capital: 101 WETH. Flash loan: 1.29M USDC (repaid in-tx). Output: 906 WETH. Net profit ≈ 905 WETH (minus gas)."
+   - **Why the math works**: Explain the arbitrage in numbers. E.g. "Bought USDC cheap on Uniswap (1,386/ETH), sold USDT expensive on Curve (1,420/ETH), capturing the spread per unit × volume"
 
 Begin your analysis!`;
 }

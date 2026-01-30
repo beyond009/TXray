@@ -5,9 +5,8 @@
 
 import { analyzeTx } from './src/index.js';
 
-// 使用一个真实的以太坊交易
-// 这是一笔简单的 ETH 转账交易
-const TEST_TX = '0xdee6e0ff31681f0fcf80a0a91e520cd42afae660f63e3dd90fa50d525adbb7cd';
+// 更多复杂交易见 docs/COMPLEX_TX_EXAMPLES.md
+const TEST_TX = '0x2a615005a63785284f11a4c5cb803d1935d34e358c10a3b4d76398d2e7bb2f9d'; // EigenPhi MEV: Compound + Uniswap V3 + Curve
 
 async function testAgent() {
   console.log('🧪 测试 MEV Agent...\n');

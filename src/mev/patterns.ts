@@ -1,22 +1,11 @@
 import type { Transaction, TokenFlow, MEVPattern } from '../types/index.js';
 
-/**
- * 简单的 MEV 模式识别 (MVP 版本)
- * 基于启发式规则，不依赖外部 MEV 数据源
- */
-
-/**
- * 检测是否为套利交易
- * 启发式: 多个 DEX 交互 + 净利润 (结束时代币余额增加)
- */
 export function detectArbitrage(
   tx: Transaction,
   tokenFlows: TokenFlow[]
 ): MEVPattern | null {
-  // 简单检测: 如果有多个代币转账且最终回到发送者
   const fromAddress = tx.from.toLowerCase();
   
-  // 统计每个代币的净流入
   const netFlows = new Map<string, bigint>();
   
   for (const flow of tokenFlows) {

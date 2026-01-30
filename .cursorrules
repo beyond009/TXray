@@ -1,0 +1,13 @@
+# Mevagent Project Rules
+
+## Language
+- Use **English only** for code, comments, documentation, commit messages, and UI strings.
+
+## Comments
+- **Avoid comments** unless the logic is genuinely complex.
+- Add comments **only when**:
+  - Non-obvious algorithms (e.g. BigInt handling, encoding edge cases)
+  - Security or correctness considerations that are not clear from the code
+  - External API quirks or workarounds that need explanation
+- Prefer clear naming and small functions over explanatory comments.
+- Do **not** comment obvious code, routine setup, or trivial logic.

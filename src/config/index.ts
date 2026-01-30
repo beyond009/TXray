@@ -10,9 +10,9 @@ export const config: Config = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY || '',
   chainId: parseInt(process.env.CHAIN_ID || '1', 10),
   
-  // Tenderly 配置
   tenderlyRpcUrl: process.env.TENDERLY_RPC_URL,
   useTenderlySimulation: process.env.USE_TENDERLY_SIMULATION === 'true',
+  enableVerification: process.env.ENABLE_VERIFICATION !== 'false',
 };
 
 // LLM 配置

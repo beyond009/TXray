@@ -120,7 +120,13 @@ export interface AnalysisState {
   
   // Draft stage
   draftExplanation?: string;
-  
+
+  // Verify stage
+  verificationResult?: {
+    passed: boolean;
+    issues: string[];
+  };
+
   // Output
   finalReport?: {
     summary: string;
@@ -128,8 +134,9 @@ export interface AnalysisState {
     steps: string[];
     tokenFlows: TokenFlow[];
     technicalDetails: Record<string, any>;
-    tenderlyCallTrace?: any; // Tenderly 完整调用轨迹
-    etherscanInternalTxs?: InternalTransaction[]; // Etherscan ETH 流转
+    verification?: { passed: boolean; issues: string[] };
+    tenderlyCallTrace?: any;
+    etherscanInternalTxs?: InternalTransaction[];
   };
   
   // Error handling
@@ -146,9 +153,9 @@ export interface Config {
   anthropicApiKey: string;
   chainId: number;
   
-  // Tenderly 配置
   tenderlyRpcUrl?: string;
   useTenderlySimulation?: boolean;
+  enableVerification?: boolean;
 }
 
 /**
@@ -172,5 +179,7 @@ export type ProgressEvent =
   | { type: 'draft_start' }
   | { type: 'draft_chunk'; content: string }
   | { type: 'draft_done' }
+  | { type: 'verify_start' }
+  | { type: 'verify_done'; payload?: { passed: boolean; issuesCount: number } }
   | { type: 'done'; payload: { report: any } }
   | { type: 'error'; message: string; step?: string };

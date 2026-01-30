@@ -1,11 +1,5 @@
-/**
- * 简单测试脚本 - 验证 Agent 是否能正常工作
- * 运行: tsx test-simple.ts
- */
-
 import { analyzeTx } from './src/index.js';
 
-// 更多复杂交易见 docs/COMPLEX_TX_EXAMPLES.md
 const TEST_TX = '0x2a615005a63785284f11a4c5cb803d1935d34e358c10a3b4d76398d2e7bb2f9d'; // EigenPhi MEV: Compound + Uniswap V3 + Curve
 
 async function testAgent() {

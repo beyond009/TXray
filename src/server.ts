@@ -1,12 +1,12 @@
 /**
- * Chat API server with SSE for conversational tx analysis (方案 A).
- * POST /api/chat → SSE stream: progress events + message_end with report or reply.
+ * Chat API server with SSE for conversational tx analysis.
+ * Uses LangGraph agent with tool calling - LLM decides when to analyze.
+ * POST /api/chat → SSE stream: progress events + message_end with response.
  */
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { analyzeTx } from './graph/workflow.js';
-import { detectIntent } from './chat/intent.js';
+import { chat } from './chat/agent.js';
 import { getOrCreateConversation, appendMessage } from './chat/store.js';
 import type { ProgressEvent } from './types/index.js';
 
@@ -42,46 +42,26 @@ app.post('/api/chat', async (req, res) => {
 
   sendSSE(res, 'session', { conversationId: conv.id });
 
-  const intent = detectIntent(userMessage);
+  try {
+    const onProgress = (event: ProgressEvent) => {
+      const data = 'payload' in event ? event.payload : ('content' in event ? { content: event.content } : {});
+      sendSSE(res, event.type, data);
+    };
 
-  if (intent.type === 'analyze_tx' && intent.payload?.txHash) {
-    const txHash = intent.payload.txHash;
-    if (!txHash.startsWith('0x') || txHash.length !== 66) {
-      sendSSE(res, 'error', { message: 'Invalid transaction hash format.' });
-      sendSSE(res, 'message_end', { content: 'Please provide a valid transaction hash (0x + 64 hex characters).' });
-      appendMessage(conv.id, 'assistant', 'Please provide a valid transaction hash (0x + 64 hex characters).');
-      res.end();
-      return;
-    }
+    const onToken = (token: string) => {
+      sendSSE(res, 'token', { content: token });
+    };
 
-    try {
-      // Send only the payload to avoid double-wrapping on frontend
-      const onProgress = (event: ProgressEvent) => {
-        // For events with payload, send payload only
-        // For events without payload (like start events), send empty object
-        const data = 'payload' in event ? event.payload : ('content' in event ? { content: event.content } : {});
-        sendSSE(res, event.type, data);
-      };
-      const result = await analyzeTx(txHash, 'ethereum', { onProgress });
+    const result = await chat(conv.messages, { onProgress, onToken });
 
-      if (result.error) {
-        sendSSE(res, 'error', { message: result.error });
-      }
-
-      const report = result.finalReport;
-      const content = report?.summary ?? (result.error ? `Error: ${result.error}` : 'No report generated.');
-      sendSSE(res, 'message_end', { content, report: report ?? null });
-      appendMessage(conv.id, 'assistant', content);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      sendSSE(res, 'error', { message, step: 'analyze' });
-      sendSSE(res, 'message_end', { content: `Error: ${message}` });
-      appendMessage(conv.id, 'assistant', `Error: ${message}`);
-    }
-  } else {
-    const content = 'Send a transaction hash (0x...) to analyze it.';
-    sendSSE(res, 'message_end', { content });
-    appendMessage(conv.id, 'assistant', content);
+    sendSSE(res, 'message_end', { content: result.response, toolsCalled: result.toolsCalled });
+    appendMessage(conv.id, 'assistant', result.response);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Chat error:', err);
+    sendSSE(res, 'error', { message });
+    sendSSE(res, 'message_end', { content: `Error: ${message}` });
+    appendMessage(conv.id, 'assistant', `Error: ${message}`);
   }
 
   res.end();
@@ -91,4 +71,5 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
   console.log('POST /api/chat with { conversationId?, message } → SSE stream');
+  console.log('Agent will automatically call tools when needed.');
 });

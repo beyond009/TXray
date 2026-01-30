@@ -493,6 +493,74 @@ export async function draftNode(state: AnalysisState): Promise<Partial<AnalysisS
   }
 }
 
+function buildGroundTruth(state: AnalysisState): string {
+  const tx = state.rawTx!;
+  const flows = state.tokenFlows || [];
+  const from = tx.from.toLowerCase();
+  const sent = flows.filter((f) => f.from.toLowerCase() === from);
+  const received = flows.filter((f) => f.to.toLowerCase() === from);
+  const fmt = (f: { amount: string; symbol?: string; decimals?: string }) => {
+    const amt = f.decimals ? formatUnits(BigInt(f.amount), Number(f.decimals)) : f.amount;
+    return `${amt} ${f.symbol || 'tokens'}`;
+  };
+  const lines = [
+    `Block: ${tx.blockNumber}`,
+    `Gas used: ${tx.gasUsed}`,
+    `From: ${tx.from}`,
+    `To: ${tx.to || '(contract creation)'}`,
+    `ETH value: ${(Number(tx.value) / 1e18).toFixed(6)}`,
+    sent.length ? `Sent: ${sent.map(fmt).join(', ')}` : null,
+    received.length ? `Received: ${received.map(fmt).join(', ')}` : null,
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
+export async function verifyNode(state: AnalysisState): Promise<Partial<AnalysisState>> {
+  if (state.error || !state.draftExplanation || !state.rawTx) {
+    return {};
+  }
+  if (config.enableVerification === false) {
+    return { verificationResult: { passed: true, issues: [] } };
+  }
+  getProgress()?.({ type: 'verify_start' });
+  console.log('🔎 [Verify] Fact-checking draft...');
+  try {
+    const groundTruth = buildGroundTruth(state);
+    const { llmConfig } = await import('../config/index.js');
+    const llm =
+      llmConfig.provider === 'openrouter'
+        ? new ChatOpenAI({
+            apiKey: config.anthropicApiKey,
+            model: llmConfig.model,
+            temperature: 0,
+            configuration: { baseURL: llmConfig.baseURL },
+          })
+        : new ChatAnthropic({
+            apiKey: config.anthropicApiKey,
+            model: llmConfig.model,
+            temperature: 0,
+          });
+    const prompt = `Ground truth from on-chain data:
+${groundTruth}
+
+Draft analysis to verify:
+${state.draftExplanation.slice(0, 4000)}
+
+Task: List any factual errors in the draft (wrong numbers, wrong addresses, wrong token flow). Reply with "OK" if no errors. Otherwise list each error on a new line starting with "- ".`;
+    const resp = await llm.invoke(prompt);
+    const text = resp.content.toString().trim();
+    const passed = text.toUpperCase().startsWith('OK') || text.toLowerCase().includes('no error');
+    const issues = passed ? [] : text.split('\n').filter((l) => l.trim().startsWith('-')).map((l) => l.replace(/^-\s*/, '').trim());
+    if (issues.length) console.log(`   ⚠️  Issues: ${issues.length}`);
+    else console.log('   ✓ Passed');
+    getProgress()?.({ type: 'verify_done', payload: { passed, issuesCount: issues.length } });
+    return { verificationResult: { passed, issues } };
+  } catch (err) {
+    console.warn('   Verify failed:', err);
+    return { verificationResult: { passed: true, issues: [] } };
+  }
+}
+
 export async function outputNode(state: AnalysisState): Promise<Partial<AnalysisState>> {
   console.log('📄 [Output] Formatting final report...');
 
@@ -526,6 +594,7 @@ export async function outputNode(state: AnalysisState): Promise<Partial<Analysis
       to: state.rawTx?.to,
       mevConfidence: mevPattern.confidence,
     },
+    verification: state.verificationResult,
     tenderlyCallTrace: state.tenderlyCallTrace,
     etherscanInternalTxs: state.etherscanInternalTxs,
   };

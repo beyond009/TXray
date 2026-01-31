@@ -106,6 +106,7 @@ export async function chat(
 
   const toolsCalled: string[] = [];
   let finalResponse = '';
+  let hasStreamedContent = false;
 
   try {
     // Use streamEvents for proper streaming with tool calling
@@ -115,12 +116,13 @@ export async function chat(
     );
 
     for await (const event of eventStream) {
-      // Stream tokens from LLM response
+      // Stream tokens from LLM response (captures ALL LLM generations including post-tool calls)
       if (event.event === 'on_chat_model_stream' && event.data?.chunk?.content) {
         const content = event.data.chunk.content;
         if (typeof content === 'string' && content) {
           options?.onToken?.(content);
           finalResponse += content;
+          hasStreamedContent = true;
         }
       }
 
@@ -133,12 +135,13 @@ export async function chat(
         }
       }
 
-      // Capture final state if streaming misses content
+      // Fallback: capture final state if streaming somehow missed content
       if (event.event === 'on_chain_end' && event.name === 'LangGraph') {
         const output = event.data?.output;
         if (output?.messages && Array.isArray(output.messages)) {
           const lastMsg = output.messages[output.messages.length - 1];
-          if (lastMsg?.content && typeof lastMsg.content === 'string' && !finalResponse) {
+          if (lastMsg?.content && typeof lastMsg.content === 'string' && !hasStreamedContent) {
+            // Only use final message if streaming failed
             finalResponse = lastMsg.content;
           }
         }

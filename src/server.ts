@@ -33,6 +33,9 @@ app.post('/api/chat', async (req, res) => {
 
   const conv = getOrCreateConversation(bodyId);
   appendMessage(conv.id, 'user', userMessage);
+  
+  // Re-fetch conversation with updated messages
+  const updatedConv = getOrCreateConversation(conv.id);
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -52,7 +55,7 @@ app.post('/api/chat', async (req, res) => {
       sendSSE(res, 'token', { content: token });
     };
 
-    const result = await chat(conv.messages, { onProgress, onToken });
+    const result = await chat(updatedConv.messages, { onProgress, onToken });
 
     sendSSE(res, 'message_end', { content: result.response, toolsCalled: result.toolsCalled });
     appendMessage(conv.id, 'assistant', result.response);

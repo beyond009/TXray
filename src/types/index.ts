@@ -56,6 +56,33 @@ export interface InternalTransaction {
 }
 
 /**
+ * Enriched info for an address in the call trace
+ */
+export interface CallTraceAddressInfo {
+  label: string | null;
+  isContract: boolean;
+  abi?: any[] | null;
+  source?: string | null;
+}
+
+/**
+ * Flattened call with depth for step-by-step explanation
+ */
+export interface FlattenedCall {
+  depth: number;
+  index: number;
+  type: string;
+  from: string;
+  to: string;
+  value: string;
+  gas?: string;
+  gasUsed?: string;
+  input?: string;
+  functionSelector?: string;
+  decodedInput?: any;
+}
+
+/**
  * 地址标签信息
  */
 export interface AddressLabel {
@@ -117,7 +144,12 @@ export interface AnalysisState {
   };
   
   // Rules stage (跳过 MVP)
-  
+
+  // CallTrace stage (address enrichment + LLM step explanation)
+  callTraceEnrichment?: Record<string, CallTraceAddressInfo>;
+  flattenedCalls?: FlattenedCall[];
+  callTraceExplanation?: string;
+
   // Draft stage
   draftExplanation?: string;
 
@@ -135,6 +167,7 @@ export interface AnalysisState {
     tokenFlows: TokenFlow[];
     technicalDetails: Record<string, any>;
     verification?: { passed: boolean; issues: string[] };
+    callTraceExplanation?: string;
     tenderlyCallTrace?: any;
     etherscanInternalTxs?: InternalTransaction[];
   };
@@ -169,13 +202,28 @@ export interface LLMConfig {
 
 /**
  * Progress events for streaming pipeline steps (e.g. to SSE).
+ * Payloads contain raw API response data for frontend display.
  */
 export type ProgressEvent =
-  | { type: 'rpc_done'; payload?: { blockNumber?: number } }
+  | { type: 'rpc_done'; payload: { rawTx: any; receipt: any; tokenFlows: any[] } }
   | { type: 'etherscan_start' }
-  | { type: 'etherscan_done'; payload?: { abi: boolean; internalTxCount: number } }
+  | {
+      type: 'etherscan_done';
+      payload: {
+        contractABI: any[] | null;
+        contractSource: string | null;
+        decodedFunction: any;
+        addressLabels: Record<string, string>;
+        internalTxs: any[];
+        gasContext: { gasPrice: string | null; baseFee: string | null } | null;
+      };
+    }
   | { type: 'tenderly_start' }
-  | { type: 'tenderly_done'; payload?: { hasTrace: boolean } }
+  | { type: 'tenderly_done'; payload: { trace: any; calls: any[] } }
+  | { type: 'calltrace_enrich_start' }
+  | { type: 'calltrace_enrich_done'; payload: { addressesEnriched: number } }
+  | { type: 'calltrace_explain_start' }
+  | { type: 'calltrace_explain_done'; payload?: { explanationLength: number } }
   | { type: 'draft_start' }
   | { type: 'draft_chunk'; content: string }
   | { type: 'draft_done' }

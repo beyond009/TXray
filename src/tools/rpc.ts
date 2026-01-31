@@ -85,9 +85,7 @@ function lookupMethodSignatureFromDb(
   return chosen;
 }
 
-/**
- * 获取交易详情（增强版）
- */
+
 export async function getTransactionDetails(txHash: Hash): Promise<Transaction> {
   try {
     const [tx, receipt] = await Promise.all([

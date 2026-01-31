@@ -2,6 +2,7 @@ import type { ProgressEvent } from '../types/index.js';
 import { runWithProgress } from '../chat/progress.js';
 import { StateGraph, Annotation } from '@langchain/langgraph';
 import { extractNode, draftNode, verifyNode, outputNode } from './nodes.js';
+import { callTraceEnrichNode, callTraceExplainNode } from './calltrace.js';
 
 export function createMEVAnalyzer() {
   const StateAnnotation = Annotation.Root({
@@ -10,6 +11,16 @@ export function createMEVAnalyzer() {
     rawTx: Annotation<any>,
     decodedCalls: Annotation<any[]>,
     tokenFlows: Annotation<any[]>,
+    tenderlyCallTrace: Annotation<any>,
+    internalTxs: Annotation<any[]>,
+    etherscanInternalTxs: Annotation<any[]>,
+    addressLabels: Annotation<any>,
+    contractABI: Annotation<any>,
+    contractSource: Annotation<any>,
+    gasContext: Annotation<any>,
+    callTraceEnrichment: Annotation<any>,
+    flattenedCalls: Annotation<any[]>,
+    callTraceExplanation: Annotation<string>,
     draftExplanation: Annotation<string>,
     verificationResult: Annotation<any>,
     finalReport: Annotation<any>,
@@ -19,12 +30,16 @@ export function createMEVAnalyzer() {
   const workflow = new StateGraph(StateAnnotation);
 
   workflow.addNode('extract', extractNode as any);
+  workflow.addNode('callTraceEnrich', callTraceEnrichNode as any);
+  workflow.addNode('callTraceExplain', callTraceExplainNode as any);
   workflow.addNode('draft', draftNode as any);
   workflow.addNode('verify', verifyNode as any);
   workflow.addNode('output', outputNode as any);
 
   (workflow as any).addEdge('__start__', 'extract');
-  (workflow as any).addEdge('extract', 'draft');
+  (workflow as any).addEdge('extract', 'callTraceEnrich');
+  (workflow as any).addEdge('callTraceEnrich', 'callTraceExplain');
+  (workflow as any).addEdge('callTraceExplain', 'draft');
   (workflow as any).addEdge('draft', 'verify');
   (workflow as any).addEdge('verify', 'output');
   (workflow as any).addEdge('output', '__end__');

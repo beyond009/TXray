@@ -25,7 +25,22 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
     const rawTx = await getTransactionDetails(txHash);
     const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
     const tokenFlows = extractTokenFlows(receipt);
-    getProgress()?.({ type: 'rpc_done', payload: { blockNumber: rawTx.blockNumber } });
+    const receiptPlain = receipt ? {
+      blockHash: receipt.blockHash,
+      blockNumber: receipt.blockNumber?.toString(),
+      contractAddress: receipt.contractAddress,
+      cumulativeGasUsed: receipt.cumulativeGasUsed?.toString(),
+      effectiveGasPrice: receipt.effectiveGasPrice?.toString(),
+      from: receipt.from,
+      gasUsed: receipt.gasUsed?.toString(),
+      logs: receipt.logs,
+      logsBloom: receipt.logsBloom,
+      status: receipt.status,
+      to: receipt.to,
+      transactionHash: receipt.transactionHash,
+      type: receipt.type,
+    } : null;
+    getProgress()?.({ type: 'rpc_done', payload: { rawTx, receipt: receiptPlain, tokenFlows } });
 
     const { decodeCalldata } = await import('../tools/rpc.js');
     const decodedInput = decodeCalldata(rawTx.input);
@@ -145,10 +160,13 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
           }));
           console.log(`   ✅ Extracted ${tenderlyInternalTxs.length} calls from Tenderly`);
         }
-        getProgress()?.({ type: 'tenderly_done', payload: { hasTrace: !!(tenderlyCallTrace?.trace) } });
+        getProgress()?.({
+          type: 'tenderly_done',
+          payload: { trace: tenderlyCallTrace, calls: tenderlyInternalTxs },
+        });
       } catch (error) {
         console.log(`   ⚠️  [Tenderly] Trace failed: ${error}`);
-        getProgress()?.({ type: 'tenderly_done', payload: { hasTrace: false } });
+        getProgress()?.({ type: 'tenderly_done', payload: { trace: null, calls: [] } });
       }
     } else {
       if (!config.tenderlyRpcUrl) {
@@ -156,20 +174,36 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
       } else if (!config.useTenderlySimulation) {
         console.log('   ℹ️  [Tenderly] Skipped: USE_TENDERLY_SIMULATION=false');
       }
-      getProgress()?.({ type: 'tenderly_done', payload: { hasTrace: false } });
+      getProgress()?.({ type: 'tenderly_done', payload: { trace: null, calls: [] } });
     }
     
     // 数据源 2: Etherscan Internal Transactions（ETH 流转）
     console.log('   📡 [Etherscan] Fetching internal txs (ETH flows)...');
     const etherscanInternalTxs = await getInternalTransactions(txHash);
     console.log(`   ✅ Got ${etherscanInternalTxs.length} internal txs from Etherscan`);
-    getProgress()?.({
-      type: 'etherscan_done',
-      payload: { abi: !!(contractABI && contractABI.length > 0), internalTxCount: etherscanInternalTxs.length },
-    });
 
     const internalTxs = tenderlyInternalTxs.length > 0 ? tenderlyInternalTxs : etherscanInternalTxs;
     const gasPrice = await getGasPriceAtBlock(rawTx.blockNumber);
+
+    const addressLabels: Record<string, string> = {};
+    if (fromLabel) addressLabels[rawTx.from] = fromLabel;
+    if (toLabel && rawTx.to) addressLabels[rawTx.to] = toLabel;
+
+    const contractSourceForPayload = contractSource && contractSource.length > 100000
+      ? contractSource.slice(0, 100000) + '\n/* ... truncated */'
+      : contractSource;
+
+    getProgress()?.({
+      type: 'etherscan_done',
+      payload: {
+        contractABI,
+        contractSource: contractSourceForPayload,
+        decodedFunction: decodedFunction || null,
+        addressLabels,
+        internalTxs: etherscanInternalTxs,
+        gasContext: gasPrice,
+      },
+    });
     
     // 输出获取结果
     console.log('   ✓ Data fetched:');
@@ -180,11 +214,6 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
     console.log(`      To Label: ${toLabel || 'N/A'}`);
     console.log(`      Internal Txs: ${internalTxs.length}`);
     console.log(`      Gas Price: ${gasPrice?.gasPrice || 'N/A'} Gwei`);
-    
-    // 构建地址标签映射
-    const addressLabels: Record<string, string> = {};
-    if (fromLabel) addressLabels[rawTx.from] = fromLabel;
-    if (toLabel && rawTx.to) addressLabels[rawTx.to] = toLabel;
     
     // 获取代币信息（先尝试 RPC，失败后再用 Etherscan）
     const uniqueTokens = [...new Set(tokenFlows.map(f => f.token))];
@@ -344,11 +373,9 @@ export async function extractNode(state: AnalysisState): Promise<Partial<Analysi
     console.log('─'.repeat(60));
     console.log('✅ [Extract] Data extraction completed\n');
     
-    // 构建 decoded calls 信息
     const decodedCalls: DecodedCall[] = [];
     if (rawTx.to) {
       if (decodedFunction) {
-        // 使用 ABI 解码的结果（更详细）
         decodedCalls.push({
           contract: rawTx.to,
           functionName: decodedFunction.functionName,
@@ -540,13 +567,17 @@ export async function verifyNode(state: AnalysisState): Promise<Partial<Analysis
             model: llmConfig.model,
             temperature: 0,
           });
+    const callTraceSection = state.callTraceExplanation
+      ? `\nCall trace explanation (use for cross-check):\n${state.callTraceExplanation.slice(0, 2000)}\n`
+      : '';
+
     const prompt = `Ground truth from on-chain data:
 ${groundTruth}
-
+${callTraceSection}
 Draft analysis to verify:
 ${state.draftExplanation.slice(0, 4000)}
 
-Task: List any factual errors in the draft (wrong numbers, wrong addresses, wrong token flow). Reply with "OK" if no errors. Otherwise list each error on a new line starting with "- ".`;
+Task: List any factual errors in the draft (wrong numbers, wrong addresses, wrong token flow). Also check if the draft contradicts the call trace explanation. Reply with "OK" if no errors. Otherwise list each error on a new line starting with "- ".`;
     const resp = await llm.invoke(prompt);
     const text = resp.content.toString().trim();
     const passed = text.toUpperCase().startsWith('OK') || text.toLowerCase().includes('no error');
@@ -595,6 +626,7 @@ export async function outputNode(state: AnalysisState): Promise<Partial<Analysis
       mevConfidence: mevPattern.confidence,
     },
     verification: state.verificationResult,
+    callTraceExplanation: state.callTraceExplanation,
     tenderlyCallTrace: state.tenderlyCallTrace,
     etherscanInternalTxs: state.etherscanInternalTxs,
   };
@@ -802,9 +834,17 @@ ${JSON.stringify(tenderlyCallTrace).length > 5000 ? '\n... (truncated, main stru
 - error: whether the call failed
 ` : '(Tenderly not configured or fetch failed)'}
 
+# Call Trace Explanation (Step-by-Step)
+${state.callTraceExplanation ? `
+The following is a dedicated step-by-step explanation of the call trace. Use it to inform your analysis and ensure consistency.
+\`\`\`
+${state.callTraceExplanation}
+\`\`\`
+` : '(No call trace explanation available)'}
+
 # Analysis Task
 
-Analyze this Ethereum transaction in depth.
+Analyze this Ethereum transaction in depth. Your summary should align with the Call Trace Explanation above. Cross-check: token flows, swap paths, and protocol roles must match.
 
 **Core Requirements**:
 

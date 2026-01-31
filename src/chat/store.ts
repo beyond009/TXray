@@ -106,5 +106,3 @@ export function cleanupOldConversations(maxAgeDays = 30): number {
   return result.changes;
 }
 
-// Database instance available internally
-// Use exported functions for all operations

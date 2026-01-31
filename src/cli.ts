@@ -42,6 +42,8 @@ Example:
         tokenFlows: any[];
         technicalDetails: Record<string, any>;
         verification?: { passed: boolean; issues: string[] };
+        callTraceExplanation?: string;
+        tenderlyCallTrace?: any;
         tenderlySimulation?: any;
       };
 
@@ -63,14 +65,22 @@ Example:
         report.verification.issues.forEach((i: string) => console.log(`  - ${i}`));
       }
 
-      if (report.tenderlySimulation) {
+      if (report.callTraceExplanation) {
+        console.log('\n' + '─'.repeat(60));
+        console.log('\nCall Trace Explanation:\n');
+        console.log(report.callTraceExplanation);
+      }
+
+      if (report.tenderlyCallTrace || report.tenderlySimulation) {
+        const tenderly = report.tenderlyCallTrace || report.tenderlySimulation;
         console.log('\n' + '─'.repeat(60));
         console.log('\nTenderly trace:');
-        console.log(`  Status: ${report.tenderlySimulation.status ? 'OK' : 'Failed'}`);
-        console.log(`  Gas: ${report.tenderlySimulation.gasUsed}`);
+        console.log(`  Status: ${tenderly.status ? 'OK' : 'Failed'}`);
+        console.log(`  Gas: ${tenderly.gasUsed}`);
 
-        if (report.tenderlySimulation.trace) {
-          const allCalls = extractAllCallsForDisplay(report.tenderlySimulation.trace);
+        if (tenderly.trace && tenderly.trace.length > 0) {
+          const root = Array.isArray(tenderly.trace) ? tenderly.trace[0] : tenderly.trace;
+          const allCalls = extractAllCallsForDisplay(root);
           console.log(`\n  Calls (${allCalls.length}):`);
           allCalls.slice(0, 5).forEach((call: any, i: number) => {
             console.log(`    ${i + 1}. ${call.type}: ${call.from?.slice(0, 10)}... → ${call.to?.slice(0, 10)}...`);

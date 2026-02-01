@@ -11,7 +11,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
-import { paymentMiddleware } from 'x402-express';
+import { createStreamingPaymentGate } from './x402-streaming-gate.js';
 import { chat } from './chat/agent.js';
 import { getOrCreateConversation, appendMessage } from './chat/store.js';
 import type { ProgressEvent } from './types/index.js';
@@ -63,19 +63,19 @@ const x402Routes = {
   },
 };
 
+const streamingPaymentGate =
+  x402PayTo?.startsWith('0x')
+    ? createStreamingPaymentGate({
+        payTo: x402PayTo,
+        routes: x402Routes as Parameters<typeof createStreamingPaymentGate>[0]['routes'],
+        facilitator: { url: x402FacilitatorUrl },
+      })
+    : null;
+
 function adminOrPaymentGate(req: express.Request, res: express.Response, next: express.NextFunction) {
   const token = (req.headers['x-admin-token'] as string) || req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  if (adminToken && token && token === adminToken) {
-    return next();
-  }
-  if (x402PayTo && x402PayTo.startsWith('0x')) {
-    const facilitator = { url: x402FacilitatorUrl };
-    return paymentMiddleware(
-      x402PayTo,
-      x402Routes as any,
-      facilitator
-    )(req, res, next);
-  }
+  if (adminToken && token && token === adminToken) return next();
+  if (streamingPaymentGate) return streamingPaymentGate(req, res, next);
   next();
 }
 
@@ -93,6 +93,7 @@ function jsonSafe(obj: unknown): string {
 function sendSSE(res: express.Response, event: string, data: unknown): void {
   res.write(`event: ${event}\n`);
   res.write(`data: ${typeof data === 'object' ? jsonSafe(data) : String(data)}\n\n`);
+  (res as unknown as { flush?: () => void }).flush?.();
 }
 
 app.post('/api/chat', adminOrPaymentGate, async (req, res) => {
@@ -110,10 +111,13 @@ app.post('/api/chat', adminOrPaymentGate, async (req, res) => {
   const updatedConv = getOrCreateConversation(conv.id);
 
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
+
+  const socket = (res as unknown as { socket?: { setNoDelay?: (v: boolean) => void } }).socket;
+  socket?.setNoDelay?.(true);
 
   sendSSE(res, 'session', { conversationId: conv.id });
 

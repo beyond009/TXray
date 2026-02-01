@@ -38,6 +38,9 @@ importers:
       viem:
         specifier: ^2.21.0
         version: 2.44.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+      x402:
+        specifier: 1.1.0
+        version: 1.1.0(@solana/sysvars@5.5.1(typescript@5.9.3))(@tanstack/query-core@5.90.20)(@tanstack/react-query@5.90.20(react@18.3.1))(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10)
       x402-express:
         specifier: ^1.1.0
         version: 1.1.0(@solana/sysvars@5.5.1(typescript@5.9.3))(@tanstack/query-core@5.90.20)(@tanstack/react-query@5.90.20(react@18.3.1))(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10)
@@ -6422,7 +6425,7 @@ snapshots:
   ox@0.6.7(typescript@5.9.3)(zod@3.25.76):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
@@ -6436,7 +6439,7 @@ snapshots:
   ox@0.6.9(typescript@5.9.3)(zod@3.25.76):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0

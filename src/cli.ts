@@ -9,15 +9,18 @@ async function main() {
 MEV Transaction Analyzer
 
 Usage:
-  pnpm exec tsx src/cli.ts <transaction_hash>
+  pnpm exec tsx src/cli.ts <transaction_hash> [--focus "your question"]
 
 Example:
   pnpm exec tsx src/cli.ts 0x1234567890abcdef...
+  pnpm exec tsx src/cli.ts 0x123... --focus "only tell me the profit"
 `);
     process.exit(0);
   }
 
   const txHash = args[0];
+  const focusIdx = args.indexOf('--focus');
+  const userQuery = focusIdx >= 0 && args[focusIdx + 1] ? args[focusIdx + 1] : undefined;
 
   if (!txHash.startsWith('0x') || txHash.length !== 66) {
     console.error('Invalid tx hash. Expected 0x + 64 hex chars.');
@@ -28,7 +31,7 @@ Example:
   console.log('─'.repeat(60));
 
   try {
-    const result = await analyzeTx(txHash);
+    const result = await analyzeTx(txHash, 'ethereum', { userQuery });
 
     if (result.error) {
       console.error('Error:', result.error);

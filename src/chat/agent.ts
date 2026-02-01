@@ -55,6 +55,7 @@ Available tools:
 Guidelines:
 - Have natural conversations with users - remember context from earlier in the chat
 - When given a transaction hash, use analyze_transaction immediately
+- Pass the user's specific question or focus as userQuery (e.g. "only tell me the profit", "focus on swap path") so the analysis is tailored
 - Be concise but helpful
 - Respond in the user's language`;
 

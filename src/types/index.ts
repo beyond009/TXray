@@ -123,6 +123,7 @@ export interface AnalysisState {
   // Input
   txHash: string;
   chain: string;
+  userQuery?: string;
   
   // Extract stage
   rawTx?: Transaction;

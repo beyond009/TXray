@@ -22,9 +22,9 @@ export type ToolProgressCallback = (event: ProgressEvent) => void;
  */
 export function createTools(onProgress?: ToolProgressCallback) {
   const analyzeTransaction = tool(
-    async ({ txHash, chain }) => {
+    async ({ txHash, chain, userQuery }) => {
       try {
-        const result = await analyzeTx(txHash, chain || 'ethereum', { onProgress });
+        const result = await analyzeTx(txHash, chain || 'ethereum', { onProgress, userQuery });
         
         if (result.error) {
           // Emit done event with error for frontend
@@ -76,10 +76,11 @@ export function createTools(onProgress?: ToolProgressCallback) {
     },
     {
       name: 'analyze_transaction',
-      description: 'Analyze an Ethereum transaction to understand what it does, including token transfers, contract interactions, and potential MEV activity. Use this when a user provides a transaction hash (0x followed by 64 hex characters) or asks about a specific transaction.',
+      description: 'Analyze an Ethereum transaction. Use when user provides a tx hash (0x + 64 hex). Pass the user\'s specific question or focus as userQuery to tailor the analysis (e.g. "only profit", "swap path", "what contracts").',
       schema: z.object({
         txHash: z.string().describe('The transaction hash to analyze (0x + 64 hex characters)'),
         chain: z.string().optional().describe('The blockchain network (default: ethereum)'),
+        userQuery: z.string().optional().describe('User\'s specific question or focus to tailor the analysis'),
       }),
     }
   );

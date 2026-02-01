@@ -8,6 +8,7 @@ export function createMEVAnalyzer() {
   const StateAnnotation = Annotation.Root({
     txHash: Annotation<string>,
     chain: Annotation<string>,
+    userQuery: Annotation<string | undefined>,
     rawTx: Annotation<any>,
     decodedCalls: Annotation<any[]>,
     tokenFlows: Annotation<any[]>,
@@ -49,11 +50,12 @@ export function createMEVAnalyzer() {
 
 export interface AnalyzeTxOptions {
   onProgress?: (event: ProgressEvent) => void;
+  userQuery?: string;
 }
 
 export async function analyzeTx(txHash: string, chain: string = 'ethereum', options?: AnalyzeTxOptions) {
   const analyzer = createMEVAnalyzer();
-  const invoke = () => analyzer.invoke({ txHash, chain });
+  const invoke = () => analyzer.invoke({ txHash, chain, userQuery: options?.userQuery });
 
   if (options?.onProgress) {
     return runWithProgress(options.onProgress, invoke);

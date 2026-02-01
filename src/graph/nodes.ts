@@ -739,157 +739,69 @@ function buildAnalysisPrompt(state: AnalysisState): string {
   const txFee = (BigInt(tx.gasUsed) * BigInt(tx.gasPrice)) / 10n**18n;
   
   const txGasPriceGwei = (Number(tx.gasPrice) / 1e9).toFixed(9);
-  const gasAnalysis = gasContext ? `
-- Tx Gas Price: ${txGasPriceGwei} Gwei
-- Reference Price: ${gasContext.currentPrice} Gwei
-- Abnormal: ${gasContext.isAbnormal ? 'Yes ⚠️ (too high or unusually low)' : 'No'}
-` : '';
-  
   const fromLabel = addressLabels[tx.from] ? `[${addressLabels[tx.from]}]` : '';
   const toLabel = tx.to && addressLabels[tx.to] ? `[${addressLabels[tx.to]}]` : '';
   
-  return `You are a professional blockchain transaction analyst. Analyze this Ethereum transaction in detail.
+  const userFocus = state.userQuery
+    ? `User focus: "${state.userQuery}" — tailor your response to this.\n\n`
+    : '';
 
-⚠️ **Important**: 
-- If "ETH Transfer Amount" is 0, focus on token transfers!
-- Many transactions swap Token A for Token B without ETH transfer
-- Carefully analyze token inputs and outputs to understand the actual exchange
+  const etherscanJson = etherscanInternalTxs.length > 0
+    ? JSON.stringify(
+        etherscanInternalTxs.slice(0, 10).map(itx => ({
+          type: itx.type,
+          from: itx.from,
+          to: itx.to,
+          value: itx.value,
+          gasUsed: itx.gasUsed,
+          isError: itx.isError,
+        })),
+        (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value,
+        2
+      )
+    : null;
 
-# Basic Transaction Information
-- **Transaction Hash**: ${state.txHash}
-- **Block Number**: ${tx.blockNumber}
-- **From**: ${tx.from} ${fromLabel}
-- **To**: ${tx.to || '(Contract Creation)'} ${toLabel}
-- **ETH Transfer**: ${ethValue.toString()} ETH ${ethValue.toString() === '0' ? '(⚠️ 0 ETH doesn\'t mean no value transfer - check token transfers!)' : ''}
-- **Gas Used**: ${tx.gasUsed} gas
-- **Gas Price**: ${txGasPriceGwei} Gwei
-- **Transaction Fee**: ${txFee.toString()} ETH
+  const tenderlyJson = tenderlyCallTrace
+    ? JSON.stringify(
+        { gasUsed: tenderlyCallTrace.gasUsed, status: tenderlyCallTrace.status, trace: tenderlyCallTrace.trace },
+        (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value,
+        2
+      ).slice(0, 5000)
+    : null;
 
-# Gas Price Analysis
-${gasAnalysis}
+  return `Analyze this transaction. ${userFocus}Respond naturally; no fixed format.
 
-# Function Call Analysis
+---
+
+**1. TX basics** — on-chain: hash, block, from/to, ETH value, gas
+- Hash: ${state.txHash}
+- Block: ${tx.blockNumber}
+- From: ${tx.from} ${fromLabel}
+- To: ${tx.to || '(create)'} ${toLabel}
+- ETH: ${ethValue.toString()} | Gas: ${tx.gasUsed} | Fee: ${txFee.toString()} ETH
+${gasContext ? `- Gas context: tx ${txGasPriceGwei} Gwei, ref ${gasContext.currentPrice} Gwei${gasContext.isAbnormal ? ' (abnormal)' : ''}` : ''}
+
+**2. Entrypoint call** — what the user's tx called (decoded from input)
 ${functionCallInfo}
 
-# Internal Transactions (${internalTxs.length} total)
-${internalTxDetails}
-
-# Token Transfers (${flows.length} total)
+**3. Token transfers** — ERC20/ERC721 transfers from logs; from/to/amount/symbol. Use for swaps and value flow.
 ${tokenFlowDetails}
 
-# Transaction Input Data
-- Input length: ${tx.input.length} characters
-- First 100 chars: ${tx.input.slice(0, 100)}${tx.input.length > 100 ? '...' : ''}
+**4. Internal calls** — contract-to-contract calls (CALL/DELEGATECALL). Order of execution.
+${internalTxDetails}
 
-# Structured Data (for deep analysis)
+**5. Etherscan internal txs** — simplified ETH flow view (Etherscan API). type, from, to, value.
+${etherscanJson ? `\`\`\`json\n${etherscanJson}\n\`\`\`${etherscanInternalTxs.length > 10 ? ` (+${etherscanInternalTxs.length - 10} more)` : ''}` : 'None'}
 
-⚠️ **Important**: Below is the raw structured data. Analyze it to understand the complete execution.
+**6. Tenderly call trace** — full execution trace; recursive (calls→subcalls). type: CALL/DELEGATECALL/STATICCALL, input (4-byte selector), value.
+${tenderlyJson ? `\`\`\`json\n${tenderlyJson}\n\`\`\`` : 'Not available'}
 
-## Etherscan Internal Transactions (ETH Flow View)
-Description: Simplified view from Etherscan, showing only internal calls with ETH transfers.
-Count: ${etherscanInternalTxs.length}
-${etherscanInternalTxs.length > 0 ? `
-Data:
-\`\`\`json
-${JSON.stringify(
-  etherscanInternalTxs.slice(0, 10).map(itx => ({
-    type: itx.type,
-    from: itx.from,
-    to: itx.to,
-    value: itx.value,
-    gasUsed: itx.gasUsed,
-    isError: itx.isError,
-  })),
-  (_key, value) => typeof value === 'bigint' ? value.toString() : value,
-  2
-)}
-${etherscanInternalTxs.length > 10 ? `\n... and ${etherscanInternalTxs.length - 10} more (omitted)` : ''}
-\`\`\`
-` : 'No data'}
+**7. Call trace explanation** — step-by-step LLM summary of the trace (use for consistency).
+${state.callTraceExplanation ? `\n${state.callTraceExplanation}\n` : 'None'}
 
-## Tenderly Call Trace (Complete Execution Trace)
-Description: Full transaction execution trace with all contract calls (CALL/DELEGATECALL/STATICCALL).
-Status: ${tenderlyCallTrace ? '✅ Available' : '❌ Not available'}
-${tenderlyCallTrace ? `
-Structure: Recursive (note the calls array for sub-calls).
-Raw data:
-\`\`\`json
-${JSON.stringify(
-  {
-    gasUsed: tenderlyCallTrace.gasUsed,
-    status: tenderlyCallTrace.status,
-    trace: tenderlyCallTrace.trace,
-  },
-  (_key, value) => typeof value === 'bigint' ? value.toString() : value,
-  2
-).slice(0, 5000)}
-${JSON.stringify(tenderlyCallTrace).length > 5000 ? '\n... (truncated, main structure shown)' : ''}
-\`\`\`
+---
 
-**How to read Tenderly Trace**:
-- trace: recursive structure; each call may have a calls array (sub-calls)
-- type: CALL (normal) / DELEGATECALL (proxy) / STATICCALL (read-only)
-- input: function call data (first 4 bytes = selector)
-- value: ETH amount transferred
-- error: whether the call failed
-` : '(Tenderly not configured or fetch failed)'}
-
-# Call Trace Explanation (Step-by-Step)
-${state.callTraceExplanation ? `
-The following is a dedicated step-by-step explanation of the call trace. Use it to inform your analysis and ensure consistency.
-\`\`\`
-${state.callTraceExplanation}
-\`\`\`
-` : '(No call trace explanation available)'}
-
-# Analysis Task
-
-Analyze this Ethereum transaction in depth. Your summary should align with the Call Trace Explanation above. Cross-check: token flows, swap paths, and protocol roles must match.
-
-**Core Requirements**:
-
-1. **Deep Analysis of Call Trace** (if provided)
-   - Use trace data to definitively identify contracts, functions, and outcomes
-   - Identify contract types (Router, Pool, Token, etc.) based on trace
-   - Make **definitive conclusions**, avoid "might be" or "possibly"
-
-2. **Accurate Token Flow Understanding**
-   - Focus on token transfers, don't be misled by "ETH Transfer: 0"
-   - Combine Call Trace and Token Flows to understand the complete path
-   - Clearly state: User sent X tokens → received Y tokens
-
-3. **Avoid Vague Language**
-   - ❌ Forbidden: "might be", "possibly", "perhaps", "guess", "probably"
-   - ✅ Correct: "call trace shows", "token transfer indicates", "this is XX contract (address 0x...)"
-   - If insufficient data, say "insufficient data"
-
-4. **Natural Style**
-   - Like telling a story: conclusion first, then evidence
-   - Don't rigidly follow fixed format
-   - Accurate technical details, accessible explanations
-
-**For MEV/Arbitrage Transactions** (when many token transfers, swaps across multiple protocols):
-
-5. **Complete Swap Path** – Do NOT skip or summarize. Trace every hop:
-   - List each swap: "Hop 1: Sent X token to Pool A (0x.../label) → received Y token"
-   - Hop 2, 3, 4... until the final output
-   - Include pool/protocol names (Uniswap V3, Curve 3pool, Compound, etc.)
-
-6. **Profit Mechanism** – Explain how profit was made:
-   - What did the executor (tx.from or main contract) put in initially?
-   - What did they get out at the end?
-   - Net result: e.g. "Spent 101 WETH, received 906 WETH → ~805 WETH profit"
-   - What arbitrage opportunity was exploited? (e.g. price gap between Uniswap and Curve, flash loan + multi-hop swap)
-
-7. **Do NOT summarize** – For complex multi-hop swaps, list each step. Do not write "swapped through multiple Curve pools" without naming each pool and the tokens at each hop.
-
-8. **Mathematical / Quantitative Analysis** – For arbitrage, provide:
-   - **Implied rates at each hop**: e.g. "Hop 1: 1 WETH ≈ 1,386 USDC (141,123 / 101.85)"
-   - **Price discrepancy**: Compare the same asset pair across different pools. E.g. "Uniswap WETH/USDC: 1,386; Curve tricrypto USDT/WETH implies 1 WETH ≈ 1,420 USDT → arbitrage opportunity"
-   - **Net PnL**: Total input vs output in a common unit. E.g. "Own capital: 101 WETH. Flash loan: 1.29M USDC (repaid in-tx). Output: 906 WETH. Net profit ≈ 905 WETH (minus gas)."
-   - **Why the math works**: Explain the arbitrage in numbers. E.g. "Bought USDC cheap on Uniswap (1,386/ETH), sold USDT expensive on Curve (1,420/ETH), capturing the spread per unit × volume"
-
-Begin your analysis!`;
+Use the data above. Prefer token flows + call trace for value/swap paths. If ETH=0, rely on tokens. Avoid vague language; state what the data shows.`;
 }
 
 function extractSteps(explanation: string): string[] {

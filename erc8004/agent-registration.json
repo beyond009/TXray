@@ -1,6 +1,6 @@
 {
   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-  "name": "Mevagent",
+  "name": "TXray",
   "description": "MEV/EVM transaction analysis agent. Explains swaps, arbitrage, token flows, and contract interactions in plain language. Use natural language to ask about any Ethereum transaction.",
   "image": "https://YOUR_DEPLOYED_URL/erc8004/mevagent-avatar.png",
   "services": [

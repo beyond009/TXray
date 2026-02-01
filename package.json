@@ -13,7 +13,8 @@
     "test": "vitest",
     "type-check": "tsc --noEmit",
     "test:etherscan": "tsx test-etherscan.ts",
-    "test:simple": "tsx test-simple.ts"
+    "test:simple": "tsx test-simple.ts",
+    "erc8004:register": "tsx scripts/erc8004-register.ts"
   },
   "keywords": [
     "mev",

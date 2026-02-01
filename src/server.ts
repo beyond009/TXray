@@ -3,12 +3,14 @@
  * Uses LangGraph agent with tool calling - LLM decides when to analyze.
  * POST /api/chat → SSE stream: progress events + message_end with response.
  * ERC-8004: /.well-known/agent-registration.json, /api/erc8004/reputation, /api/erc8004/feedback-tx
+ * x402: optional payment gate for /api/chat when X402_PAY_TO is set
  */
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
+import { paymentMiddleware } from 'x402-express';
 import { chat } from './chat/agent.js';
 import { getOrCreateConversation, appendMessage } from './chat/store.js';
 import type { ProgressEvent } from './types/index.js';
@@ -24,6 +26,41 @@ app.use(cors());
 app.use(express.json());
 app.use('/erc8004', express.static(path.join(__dirname, '../erc8004')));
 
+// x402 + admin bypass
+const x402PayTo = process.env.X402_PAY_TO as `0x${string}` | undefined;
+const x402Price = process.env.X402_PRICE || '$0.01';
+const x402Network = (process.env.X402_NETWORK || 'base') as 'base' | 'base-sepolia';
+const adminToken = process.env.ADMIN_TOKEN;
+
+const x402Routes = {
+  'POST /api/chat': {
+    price: x402Price,
+    network: x402Network,
+    config: {
+      description: 'MEV transaction analysis - one chat message',
+      mimeType: 'text/event-stream',
+    },
+  },
+};
+
+function adminOrPaymentGate(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const token = (req.headers['x-admin-token'] as string) || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (adminToken && token && token === adminToken) {
+    return next();
+  }
+  if (x402PayTo?.startsWith('0x')) {
+    return paymentMiddleware(x402PayTo, x402Routes)(req, res, next);
+  }
+  next();
+}
+
+if (x402PayTo?.startsWith('0x')) {
+  console.log(`[x402] Payment gate enabled: ${x402Price} per request → ${x402PayTo.slice(0, 10)}...`);
+}
+if (adminToken) {
+  console.log('[admin] Token bypass enabled for X-Admin-Token / Authorization: Bearer');
+}
+
 function jsonSafe(obj: unknown): string {
   return JSON.stringify(obj, (_, value) => (typeof value === 'bigint' ? value.toString() : value));
 }
@@ -33,7 +70,7 @@ function sendSSE(res: express.Response, event: string, data: unknown): void {
   res.write(`data: ${typeof data === 'object' ? jsonSafe(data) : String(data)}\n\n`);
 }
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', adminOrPaymentGate, async (req, res) => {
   const { conversationId: bodyId, message } = req.body as { conversationId?: string; message?: string };
   const userMessage = typeof message === 'string' ? message.trim() : '';
   if (!userMessage) {
@@ -97,7 +134,7 @@ app.get('/.well-known/agent-registration.json', (_req, res) => {
     services: [
       { name: 'web', endpoint: `${baseUrl.replace(/\/$/, '')}/api/chat` },
     ],
-    x402Support: false,
+    x402Support: !!x402PayTo?.startsWith('0x'),
     active: true,
     registrations: [
       {

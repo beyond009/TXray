@@ -9,7 +9,7 @@
       "endpoint": "https://YOUR_DEPLOYED_URL/api/chat"
     }
   ],
-  "x402Support": false,
+  "x402Support": true,
   "active": true,
   "registrations": [
     {

@@ -49,3 +49,15 @@ Users give feedback by sending a transaction. The frontend should:
 2. Send the returned `{ to, data, value }` via user's wallet
 
 The caller must NOT be the agent owner (per spec).
+
+## x402 Payment (Optional)
+
+To enable pay-per-use for `/api/chat`:
+
+1. Set `X402_PAY_TO` to your Base mainnet address (receives USDC)
+2. Optionally set `X402_PRICE` (default $0.01) and `X402_NETWORK` (base | base-sepolia)
+3. Clients receive HTTP 402 without payment; with `X-PAYMENT` header after paying, request succeeds
+
+Registration file's `x402Support` is set automatically based on `X402_PAY_TO`.
+
+**Admin bypass**: Set `ADMIN_TOKEN` in env. Requests with header `X-Admin-Token: <token>` or `Authorization: Bearer <token>` skip x402 payment.

@@ -70,7 +70,7 @@ function buildRegistrationFile(agentId: number, baseUrl: string): string {
           endpoint: `${baseUrl.replace(/\/$/, '')}/api/chat`,
         },
       ],
-      x402Support: false,
+      x402Support: true,
       active: true,
       registrations: [
         {

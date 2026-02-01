@@ -2,20 +2,32 @@
   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
   "name": "TXray",
   "description": "MEV/EVM transaction analysis agent. Explains swaps, arbitrage, token flows, and contract interactions in plain language. Use natural language to ask about any Ethereum transaction.",
-  "image": "https://YOUR_DEPLOYED_URL/erc8004/mevagent-avatar.png",
+  "image": "",
   "services": [
     {
       "name": "web",
-      "endpoint": "https://YOUR_DEPLOYED_URL/api/chat"
+      "endpoint": "https://txray.vercel.app/"
     }
   ],
   "x402Support": true,
   "active": true,
   "registrations": [
     {
-      "agentId": 0,
+      "agentId": 22715,
       "agentRegistry": "eip155:1:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
     }
   ],
-  "supportedTrust": ["reputation"]
+  "supportedTrust": ["reputation"],
+  "tags": [
+    "evm",
+    "mev",
+    "tx"
+  ],
+  "oasf_skills": [
+    "data_analysis/blockchain",
+    "natural_language_processing/summarization"
+  ],
+  "oasf_domains": [
+    "technology/software_development\t"
+  ]
 }

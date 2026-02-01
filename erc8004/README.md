@@ -60,4 +60,9 @@ To enable pay-per-use for `/api/chat`:
 
 Registration file's `x402Support` is set automatically based on `X402_PAY_TO`.
 
+**Facilitator** : Default facilitator URLs:
+- base-sepolia: https://x402.org/facilitator
+- base: https://pay.openfacilitator.io
+Override with `X402_FACILITATOR_URL` if needed.
+
 **Admin bypass**: Set `ADMIN_TOKEN` in env. Requests with header `X-Admin-Token: <token>` or `Authorization: Bearer <token>` skip x402 payment.

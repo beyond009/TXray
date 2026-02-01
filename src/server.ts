@@ -29,7 +29,8 @@ app.use('/erc8004', express.static(path.join(__dirname, '../erc8004')));
 // x402 + admin bypass
 const x402PayTo = process.env.X402_PAY_TO as `0x${string}` | undefined;
 const x402Price = process.env.X402_PRICE || '$0.01';
-const x402Network = (process.env.X402_NETWORK || 'base') as 'base' | 'base-sepolia';
+const x402Network = 'base';
+const x402FacilitatorUrl = 'https://pay.openfacilitator.io' as `${string}://${string}`;
 const adminToken = process.env.ADMIN_TOKEN;
 
 const x402Routes = {
@@ -48,14 +49,19 @@ function adminOrPaymentGate(req: express.Request, res: express.Response, next: e
   if (adminToken && token && token === adminToken) {
     return next();
   }
-  if (x402PayTo?.startsWith('0x')) {
-    return paymentMiddleware(x402PayTo, x402Routes)(req, res, next);
+  if (x402PayTo && x402PayTo.startsWith('0x')) {
+    const facilitator = { url: x402FacilitatorUrl };
+    return paymentMiddleware(
+      x402PayTo,
+      x402Routes as any,
+      facilitator
+    )(req, res, next);
   }
   next();
 }
 
 if (x402PayTo?.startsWith('0x')) {
-  console.log(`[x402] Payment gate enabled: ${x402Price} per request → ${x402PayTo.slice(0, 10)}...`);
+  console.log(`[x402] Payment gate enabled: ${x402Price} per request → ${x402PayTo.slice(0, 10)}... (facilitator: ${x402FacilitatorUrl})`);
 }
 if (adminToken) {
   console.log('[admin] Token bypass enabled for X-Admin-Token / Authorization: Bearer');
@@ -202,6 +208,6 @@ app.post('/api/erc8004/feedback-tx', (req, res) => {
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
-  console.log('POST /api/chat with { conversationId?, message } → SSE stream');
+  console.log('POST /api/chat with { conversationId?, message } -> SSE stream');
   console.log('Agent will automatically call tools when needed.');
 });

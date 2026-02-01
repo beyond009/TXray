@@ -4,6 +4,7 @@
  * POST /api/chat → SSE stream: progress events + message_end with response.
  * ERC-8004: /.well-known/agent-registration.json, /api/erc8004/reputation, /api/erc8004/feedback-tx
  * x402: optional payment gate for /api/chat when X402_PAY_TO is set
+ * A2A: /.well-known/agent-card.json, /a2a/v1/message:send, /a2a/v1/message:stream, /a2a/v1/tasks/:id
  */
 import 'dotenv/config';
 import path from 'path';
@@ -19,6 +20,8 @@ import {
   getReputationClients,
   buildGiveFeedbackTx,
 } from './erc8004/reputation.js';
+import { buildAgentCard } from './a2a/agentCard.js';
+import { handleSendMessage, handleStreamMessage, handleGetTask } from './a2a/handlers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -39,6 +42,22 @@ const x402Routes = {
     network: x402Network,
     config: {
       description: 'MEV transaction analysis - one chat message',
+      mimeType: 'text/event-stream',
+    },
+  },
+  'POST /a2a/v1/message:send': {
+    price: x402Price,
+    network: x402Network,
+    config: {
+      description: 'A2A message send - one analysis request',
+      mimeType: 'application/json',
+    },
+  },
+  'POST /a2a/v1/message:stream': {
+    price: x402Price,
+    network: x402Network,
+    config: {
+      description: 'A2A streaming message - one analysis request',
       mimeType: 'text/event-stream',
     },
   },
@@ -179,6 +198,19 @@ app.get('/api/erc8004/reputation', async (_req, res) => {
   }
 });
 
+// A2A: Agent Card (discovery)
+app.get('/.well-known/agent-card.json', (_req, res) => {
+  const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  const card = buildAgentCard(baseUrl, !!x402PayTo?.startsWith('0x'));
+  res.setHeader('Content-Type', 'application/json');
+  res.json(card);
+});
+
+// A2A: Protocol endpoints (x402 + admin bypass, same as /api/chat)
+app.post('/a2a/v1/message:send', adminOrPaymentGate, handleSendMessage);
+app.post('/a2a/v1/message:stream', adminOrPaymentGate, handleStreamMessage);
+app.get('/a2a/v1/tasks/:id', handleGetTask);
+
 // ERC-8004: Build giveFeedback tx params (frontend sends via wallet)
 app.post('/api/erc8004/feedback-tx', (req, res) => {
   const agentId = parseInt(process.env.ERC8004_AGENT_ID || '0', 10);
@@ -209,5 +241,5 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
   console.log('POST /api/chat with { conversationId?, message } -> SSE stream');
-  console.log('Agent will automatically call tools when needed.');
+  console.log('A2A: /.well-known/agent-card.json, POST /a2a/v1/message:send, /a2a/v1/message:stream');
 });

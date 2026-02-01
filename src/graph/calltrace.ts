@@ -156,7 +156,7 @@ export function buildCallTraceExplainPrompt(state: AnalysisState): string {
     .map(([addr, info]) => `- ${addr}: ${info.label || 'unknown'} | contract: ${info.isContract} | ABI: ${info.abi?.length || 0} entries`)
     .join('\n');
 
-  return `You are analyzing a transaction's call trace. Explain each call step-by-step.
+  return `You are analyzing a transaction's call trace. Explain each call step-by-step. Use English.
 
 ## Flattened Call Trace (${calls.length} calls, showing up to 80)
 \`\`\`

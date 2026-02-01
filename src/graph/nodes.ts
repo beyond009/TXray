@@ -4,7 +4,10 @@ import type { AnalysisState, DecodedCall } from '../types/index.js';
 import { getProgress } from '../chat/progress.js';
 import { getTransactionDetails, extractTokenFlows, publicClient, isContract, getTokenInfoFromRPC } from '../tools/rpc.js';
 import { getContractABI, getContractSource, getAddressLabel, getInternalTransactions, getTokenInfo, getGasPriceAtBlock } from '../tools/etherscan.js';
-import { traceHistoricalTransaction, extractAllCallsFromTrace } from '../tools/tenderly-trace.js';
+import {
+  traceHistoricalTransaction,
+  extractAllCallsFromTrace,
+} from '../tools/tenderly-trace.js';
 import { identifyMEVPattern } from '../mev/patterns.js';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatOpenAI } from '@langchain/openai';
@@ -530,14 +533,34 @@ function buildGroundTruth(state: AnalysisState): string {
     const amt = f.decimals ? formatUnits(BigInt(f.amount), Number(f.decimals)) : f.amount;
     return `${amt} ${f.symbol || 'tokens'}`;
   };
+
+  let internalEthToUser = '0';
+  const internalTxs = state.etherscanInternalTxs || state.internalTxs || [];
+  for (const itx of internalTxs) {
+    if (itx.to?.toLowerCase() === from && BigInt(itx.value || '0') > 0n) {
+      internalEthToUser = (Number(itx.value) / 1e18).toFixed(6);
+      break;
+    }
+  }
+  if (internalEthToUser === '0' && state.tenderlyCallTrace?.trace?.[0]) {
+    const calls = extractAllCallsFromTrace(state.tenderlyCallTrace.trace[0]);
+    for (const c of calls) {
+      if (c.to?.toLowerCase() === from && BigInt(c.value || '0') > 0n) {
+        internalEthToUser = (Number(c.value) / 1e18).toFixed(6);
+        break;
+      }
+    }
+  }
+
   const lines = [
     `Block: ${tx.blockNumber}`,
     `Gas used: ${tx.gasUsed}`,
     `From: ${tx.from}`,
     `To: ${tx.to || '(contract creation)'}`,
-    `ETH value: ${(Number(tx.value) / 1e18).toFixed(6)}`,
-    sent.length ? `Sent: ${sent.map(fmt).join(', ')}` : null,
-    received.length ? `Received: ${received.map(fmt).join(', ')}` : null,
+    `ETH value (tx-level): ${(Number(tx.value) / 1e18).toFixed(6)}`,
+    internalEthToUser !== '0' ? `Internal ETH received by user: ${internalEthToUser}` : null,
+    sent.length ? `Tokens sent: ${sent.map(fmt).join(', ')}` : null,
+    received.length ? `Tokens received: ${received.map(fmt).join(', ')}` : null,
   ].filter(Boolean);
   return lines.join('\n');
 }
@@ -571,13 +594,14 @@ export async function verifyNode(state: AnalysisState): Promise<Partial<Analysis
       ? `\nCall trace explanation (use for cross-check):\n${state.callTraceExplanation.slice(0, 2000)}\n`
       : '';
 
-    const prompt = `Ground truth from on-chain data:
+    const prompt = `Ground truth (from on-chain data):
 ${groundTruth}
 ${callTraceSection}
+
 Draft analysis to verify:
 ${state.draftExplanation.slice(0, 4000)}
 
-Task: List any factual errors in the draft (wrong numbers, wrong addresses, wrong token flow). Also check if the draft contradicts the call trace explanation. Reply with "OK" if no errors. Otherwise list each error on a new line starting with "- ".`;
+Task: List only clear factual errors—wrong amounts, wrong addresses, claims that contradict the ground truth or call trace. Do NOT flag correct statements (e.g. "user received X ETH" is correct if internal ETH flows show it, even when tx.value=0). Do NOT flag reasonable inference from the trace. Reply with "OK" if no errors. Otherwise list each error on a new line starting with "- ".`;
     const resp = await llm.invoke(prompt);
     const text = resp.content.toString().trim();
     const passed = text.toUpperCase().startsWith('OK') || text.toLowerCase().includes('no error');
@@ -769,11 +793,15 @@ function buildAnalysisPrompt(state: AnalysisState): string {
       ).slice(0, 5000)
     : null;
 
-  return `Analyze this transaction. ${userFocus}Respond naturally; no fixed format.
+  return `Analyze this transaction. Respond in English. ${userFocus}
+
+Output a single coherent analysis (no duplicate sections). Use the call trace explanation as reference—do not repeat it step-by-step; synthesize it into your narrative.
+
+Important: tx.value = ETH sent at top-level. Internal calls can transfer ETH separately (e.g. WETH withdraw → ETH to user). Check Etherscan internal txs and Tenderly trace for internal ETH flows. If tx.value=0 but user received ETH from an internal call, state that correctly.
 
 ---
 
-**1. TX basics** — on-chain: hash, block, from/to, ETH value, gas
+**1. TX basics** — hash, block, from/to, top-level ETH value, gas
 - Hash: ${state.txHash}
 - Block: ${tx.blockNumber}
 - From: ${tx.from} ${fromLabel}
@@ -796,12 +824,12 @@ ${etherscanJson ? `\`\`\`json\n${etherscanJson}\n\`\`\`${etherscanInternalTxs.le
 **6. Tenderly call trace** — full execution trace; recursive (calls→subcalls). type: CALL/DELEGATECALL/STATICCALL, input (4-byte selector), value.
 ${tenderlyJson ? `\`\`\`json\n${tenderlyJson}\n\`\`\`` : 'Not available'}
 
-**7. Call trace explanation** — step-by-step LLM summary of the trace (use for consistency).
+**7. Call trace explanation** — reference only; incorporate into your analysis, do not repeat verbatim.
 ${state.callTraceExplanation ? `\n${state.callTraceExplanation}\n` : 'None'}
 
 ---
 
-Use the data above. Prefer token flows + call trace for value/swap paths. If ETH=0, rely on tokens. Avoid vague language; state what the data shows.`;
+Synthesize the above into one clear analysis. Use token flows + call trace for swap paths. State only what the data shows; avoid speculation.`;
 }
 
 function extractSteps(explanation: string): string[] {

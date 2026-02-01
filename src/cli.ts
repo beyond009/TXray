@@ -14,6 +14,7 @@ Usage:
 Example:
   pnpm exec tsx src/cli.ts 0x1234567890abcdef...
   pnpm exec tsx src/cli.ts 0x123... --focus "only tell me the profit"
+  pnpm exec tsx src/cli.ts 0x123... --verbose   # show call trace and Tenderly details
 `);
     process.exit(0);
   }
@@ -64,17 +65,18 @@ Example:
       }
 
       if (report.verification && !report.verification.passed && report.verification.issues?.length) {
-        console.log('\nVerification issues:');
+        console.log('\nVerification notes:');
         report.verification.issues.forEach((i: string) => console.log(`  - ${i}`));
       }
 
-      if (report.callTraceExplanation) {
+      const showVerbose = args.includes('--verbose');
+      if (showVerbose && report.callTraceExplanation) {
         console.log('\n' + '─'.repeat(60));
-        console.log('\nCall Trace Explanation:\n');
+        console.log('\nCall Trace (--verbose):\n');
         console.log(report.callTraceExplanation);
       }
 
-      if (report.tenderlyCallTrace || report.tenderlySimulation) {
+      if (showVerbose && (report.tenderlyCallTrace || report.tenderlySimulation)) {
         const tenderly = report.tenderlyCallTrace || report.tenderlySimulation;
         console.log('\n' + '─'.repeat(60));
         console.log('\nTenderly trace:');
